@@ -1,0 +1,104 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#h: Usage: $0  ISO DRIVE
+#h:
+#h: This program first formats the DRIVE to FAT32 and then
+#h: extracts a GNU/Linux installation iso image to it. This
+#h: method will only work with EFI boot.
+liso() {
+    if test ! -n "${1}";then
+        liso_error "Please specify an iso file."
+        return 1
+    elif test ! -n "${2}";then
+        liso_error "Please specify a drive."
+        return 1
+    elif test ! -b "${2}";then
+        liso_error "${2} is not a block special."
+        return 1
+    elif test @"${1}" = @"@base64";then
+        sudo head -c 512 "${2}" | base64 -w 50
+        return 0
+    elif test ! -f "${1}";then
+        liso_error "${1} does not exist."
+        return 1
+    elif test ! @"`whoami`" = @"root";then
+        liso_error "You must be root to do this."
+        return 1
+    elif ! which base64 mkfs.fat mount 7z >/dev/null 2>&1;then
+        liso_error "Please ensure the following commands are available:"
+        liso_error "base64, mkfs.fat, mount, bsdtar."
+        return 1
+    fi
+    local iso="$1" drive="$2" mnt="/mnt/liso"
+    ## Burn MBR.
+    liso_info "Burning MBR to ${drive} ..."
+    base64 -d > "${drive}" <<-EOF
+	RVIIAAAAkJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAz7fqO1b
+	wAfPv8ZjHbZjHJZlNmUQZXjt2OxVK+AHy/AAa5AAHzpepLBgAA
+	UrRBu6pVMckw9vnNE3IWgftVqnUQg+EBdAtmxwbzBrRC6xXrAj
+	HJWlG0CM0TWw+2xkBQg+E/UffhU1JQuwB8uQQAZqGwB+hEAA+C
+	gABmQIDHAuLyZoE+QHz7wHhwdQn6vOx76kR8AADogwBpc29saW
+	51eC5iaW4gbWlzc2luZyBvciBjb3JydXB0Lg0KZmBmMdJmAwb4
+	e2YTFvx7ZlJmUAZTagFqEInmZvc26HvA5AaI4YjFkvY27nuIxg
+	jhQbgBAooW8nvNE41kEGZhw+geAE9wZXJhdGluZyBzeXN0ZW0g
+	bG9hZCBlcnJvci4NCl6stA6KPmIEswfNEDwKdfHNGPTr/QAAAA
+	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAAAAAAAAAAA9I0FAAAAAABwhfRWAACAIQMA
+	78TK+wAIAABAaeoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVao=
+	EOF
+    liso_info "Creating a FAT32 partition ..."
+    mkfs.fat -F 32 -n LINUX "${drive}1" >/dev/null
+    liso_info "Mounting to ${mnt} ..."
+    mkdir -p "${mnt}"
+    mount "${drive}1" "${mnt}"
+    liso_info "Extracting to ${mnt} ..."
+    if ! 7z x -o"${mnt}" "${iso}" >/dev/null;then
+        liso_error "Extraction failed, unmounting ${mnt} ..."
+        umount "${mnt}"
+        return 1
+    fi
+    liso_info "Unmounting ${mnt} ..."
+    umount "${mnt}"
+    liso_info "Syncing ..."
+    sync
+}
+## -----------------------------------------------------------------------------
+
+## -----------------------------------------------------------------------------
+liso_info()  { echo "${SCRNAME}: $*";            }
+liso_error() { echo "${SCRNAME}: error: $*" >&2; }
+SCRNAME="`basename "$0"`"
+if test @"${SCRNAME}" = @"liso";then
+    if test -n "$1";then
+        liso "$@"
+    else
+        sed -n 's/^ *#h: \{0,1\}//p' "$0" | sed "s|\\\$0|`basename $0`|g"
+        echo ""
+        sed -n 's/^ *#l: \{0,2\}//p' "$0"
+    fi
+fi
